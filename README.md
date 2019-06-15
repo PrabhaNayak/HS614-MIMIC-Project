@@ -1,1 +1,2 @@
-# HS614-MIMIC-Project
+# Projects
+In this lab we will introduce R's Postgres client, RPostgreSQL.
