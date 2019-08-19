@@ -1,0 +1,293 @@
+---
+title: "HS614 - Exploration and Modelling of MIMIC dataset (Acute MI)"
+author: "Prabha Nayak"
+date: "5/16/2019"
+output: html_document
+---
+
+Exploratory Data Analysis, Data Cleaning and visualization:
+
+
+```{r}
+#install.packages('tidyverse')
+#install.packages("Amelia")
+#install.packages("caret")
+#install.packages("rpart.plot")
+#install.packages("corrplot")
+#install.packages("pscl")
+#install.packages("ROCR")
+#install.packages("ROSE")
+# install.packages("e1071")
+# install.packages("randomForrest")
+
+
+library(dplyr)
+library(tidyverse)
+library(Amelia)
+library(ggplot2)
+library(caret)
+library(rpart.plot)
+library(corrplot)
+library(pscl)
+library(ROCR)
+library(ROSE)
+library(e1071)
+library(randomForest)
+
+setwd("C:/Users/PG/Desktop/USF/Spring2019/HS614")
+heart_df <- read.csv("mimic_final.csv", header = TRUE, sep = ',')
+
+dim(heart_df)
+
+summary(heart_df)
+```
+
+Finding the total number of NAs in each column
+```{r}
+sum(is.na(heart_df$meanbp))
+sum(is.na(heart_df$resprate))
+sum(is.na(heart_df$heartrate_max))
+sum(is.na(heart_df$chloride))
+sum(is.na(heart_df$CK))
+sum(is.na(heart_df$creatinine))
+sum(is.na(heart_df$glucose))
+sum(is.na(heart_df$potassium))
+sum(is.na(heart_df$sodium))
+```
+Dropping columns X and religion as it is not required for the study
+```{r}
+heart_df <- heart_df[, -c(1,4)]
+```
+
+Checkingfor number of levels in the ethnicity column
+number of levels = 22
+This is too many levels for the study and will be collapsed to 5 levels
+```{r}
+unique(heart_df$ethnicity)
+
+levels(heart_df$ethnicity) <- list(White= c("WHITE", "WHITE - EASTERN EUROPEAN", "WHITE - RUSSIAN", "WHITE - OTHER EUROPEAN"), Other= c("UNABLE TO OBTAIN", "OTHER", "UNKNOWN/NOT SPECIFIED","AMERICAN INDIAN/ALASKA NATIVE", "MULTI RACE ETHNICITY", "PATIENT DECLINED TO ANSWER"), Asian= c("ASIAN - ASIAN INDIAN", "ASIAN", "ASIAN - CHINESE", "ASIAN - OTHER", "ASIAN - FILIPINO", "ASIAN - CAMBODIAN"), Hispanic= c("HISPANIC OR LATINO", "HISPANIC/LATINO - PUERTO RICAN", "HISPANIC/LATINO - DOMINICAN", "PORTUGUESE"), Black= c("BLACK/AFRICAN AMERICAN", "BLACK/CAPE VERDEAN"))
+
+unique(heart_df$ethnicity)
+```
+
+Converting age above 300 to 89
+```{r}
+heart_df$age <- ifelse(heart_df$age >= 300, 89, heart_df$age)
+summary(heart_df$age)
+```
+
+Limiting CK value to 20000
+```{r}
+heart_df$CK <- ifelse(heart_df$CK > 20000, NA, heart_df$CK)
+summary(heart_df$CK)
+```
+
+limiting systolic bp to 350
+```{r}
+heart_df$sysbp <- ifelse(heart_df$sysbp >350, NA, heart_df$sysbp)
+summary(heart_df$sysbp)
+```
+
+limiting diastolic BP to 350
+```{r}
+heart_df$diasbp <- ifelse(heart_df$diasbp >350, NA, heart_df$diasbp)
+summary(heart_df$diasbp)
+```
+
+limiting Blood oxygen saturation to 100
+```{r}
+heart_df$spo2 <- ifelse(heart_df$spo2 >100, NA, heart_df$spo2)
+summary(heart_df$spo2)
+```
+
+limiting max heart rate to 459
+```{r}
+heart_df$heartrate_max <- ifelse(heart_df$heartrate_max >450, NA, heart_df$heartrate_max)
+summary(heart_df$heartrate_max)
+```
+
+limiting respiratory rate to 200
+```{r}
+heart_df$resprate <- ifelse(heart_df$resprate > 200, NA, heart_df$resprate)
+summary(heart_df$resprate)
+```
+
+##Number of NA's in the CK column = 340
+imputing missing values in column CK to remove all NA's 
+```{r}
+heart_df$CK[is.na(heart_df$CK)] <- mean(heart_df$CK,na.rm=T)
+summary(heart_df$CK)
+```
+
+
+Finding correlation between variables
+```{r}
+correlations <- cor(heart_df[-(1:2)], use= "pairwise.complete.obs", method= "spearman")
+corrplot(correlations, method="color")
+```
+
+Using na.omit to remove all rows with NA's in the dataframe
+```{r}
+heart_df2 <- na.omit(heart_df)
+```
+
+```{r}
+plot(heart_df2$hos_expire_flag, heart_df2$heartrate_max, main="Scatterplot", 
+     xlab="expired", ylab="heart rate ", pch=19)
+```
+
+creating plots that will show relations between variables
+```{r}
+a <- ggplot(data = heart_df2, aes( y=sodium,x=chloride))
+a + geom_boxplot(col="blue") +  
+              ggtitle("Relation of CK and respiratory rate") +
+              ylab("sodium")+
+              xlab("chloride")
+```
+
+Creating the test train split using the createDataPartition function from the caret package. 
+A 75:25 split is created
+The 
+```{r}
+set.seed(1305)
+heart_df3_train <- createDataPartition(y = heart_df2$hos_expire_flag, p=0.75, list = FALSE)
+train <- heart_df2[heart_df3_train, -c(2:3)]
+test <- heart_df2[-heart_df3_train, -c(2:3)]
+test$hos_expire_flag= factor(test$hos_expire_flag)
+dim(train); dim(test)
+```
+
+fitting a model with hos_expiry_flag as a function of all other variable to check
+```{r}
+logfit1 <- glm(hos_expire_flag~., data = train, family = "binomial")
+summary(logfit1)
+
+logfit2 <- glm(hos_expire_flag ~ heartrate_max + resprate + spo2 + chloride + CK + creatinine + glucose + potassium + sysbp, data = train, family = "binomial")
+summary(logfit2)
+
+logfit3 <- glm(hos_expire_flag ~ heartrate_max + resprate + spo2 + chloride + CK + creatinine + glucose + potassium, data = train, family = "binomial")
+summary(logfit3)
+
+plot(logfit3, 1)
+```
+Interpretation of fitted coefficients
+For every mg/dL increase in creatinine level the odds of dying are on average multiplied by 0.216, when all other variables in the model are held constant
+
+For every unit per liter increase in creatinine kinase level the odds of dying are on average multiplied by 0.000293, when all other variables in the model are held constant
+
+For every bpm increase in maximum heartrate the odds of dying are on average multiplied by 0.026, when all other variables in the model are held constant
+
+For every percentge increase in blood oxygen saturation the odds of dying are on average multiplied by -0.14, when all other variables in the model are held constant
+
+Plotting a scatter plot 
+```{r}
+plot(train$hos_expire_flag, train$heartrate_max, main="Scatterplot", 
+     xlab="expired", ylab="heart rate", pch=19)
+```
+
+```{r}
+pR2(logfit3)
+
+anova(logfit3, test = "Chisq")
+```
+
+```{r}
+pred.train <- predict(logfit3, newdata=train)
+
+roc.curve(train$hos_expire_flag, pred.train, 
+          main="ROC curve")
+
+pred.test <- predict(logfit3, newdata=test)
+pred.test
+
+roc.curve(test$hos_expire_flag, pred.test, add=TRUE, col=2, 
+          lwd=2, lty=2)
+
+```
+
+Support vector machine
+
+trainControl() before train() to control the comutational naunces of the train() method
+
+```{r}
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+svm_Linear <- train(hos_expire_flag ~., data = train, method = "svmLinear",
+                    trControl=trctrl,
+                    preProcess = c("center", "scale"),
+                    tuneLength = 10)
+
+svm_Linear
+```
+
+predicting the test set and building the ROC curve for the predicted variable. An AUC of 84.5% is obtained. 
+```{r}
+
+pred_test <- predict(svm_Linear, newdata = test)
+pred_test
+
+roc.curve(test$hos_expire_flag, pred_test, 
+          main="ROC curve")
+
+#confusionMatrix(pred_test, factor(test$hos_expire_flag))
+```
+
+c=1, gamma=1, kernel=linear
+```{r}
+svmfit_radial = svm(hos_expire_flag~., data = train, kernel = "linear", gamma = 1, cost = 1)
+summary(svmfit_radial)
+```
+
+c=1, gamma=0.5, kernel=radial
+```{r}
+svm_radial = svm(hos_expire_flag~. , data = train, kernel = "radial", gamma = 0.5, cost = 1)
+summary(svm_radial)
+```
+
+This looks like a better fit which is not or underfitting the train data
+```{r}
+svmfit_poly = svm(hos_expire_flag~., data = train, kernel = "polynomial", degree= 5, cost = 1)
+summary(svmfit_poly)
+```
+
+
+
+Decision tree
+```{r}
+set.seed(435)
+dtree_fit <- train(hos_expire_flag ~. , data = train, method = "rpart", parms = list(split = "information"), trControl=trctrl, tuneLength = 10)
+
+dtree_fit
+```
+
+
+```{r}
+pred_test1 <- predict(dtree_fit, newdata = test)
+pred_test1
+
+roc.curve(test$hos_expire_flag, pred_test1, 
+          main="ROC curve")
+
+#confusionMatrix(pred_test, factor(test$hos_expire_flag))
+```
+
+Random Forrest
+```{r}
+
+mi.rf <- randomForest(hos_expire_flag ~ ., data=train, importance=TRUE,
+                        proximity=TRUE)
+print(mi.rf)
+
+round(importance(mi.rf), 2)
+
+varImpPlot (mi.rf)
+```
+
+
+
+
+
+
+
+
+
